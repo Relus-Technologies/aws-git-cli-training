@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion" : "2010-09-09",
 
-  "Description" : "AWS VPC with a single instance and a single security group",
+  "Description" : "AWS VPC with a single instance and an ELB with two security groups",
 
   "Parameters" : {
 
@@ -10,6 +10,12 @@
       "Type": "AWS::EC2::KeyPair::KeyName",
       "Default": "training-test-oregon",
       "ConstraintDescription" : "must be the name of an existing EC2 KeyPair."
+    },
+    
+    "WebPort" : {
+      "Description" : "TCP/IP port of the web server",
+      "Type" : "String",
+      "Default" : "80"
     },
     
     "SSHLocation" : {
@@ -226,6 +232,32 @@
       }
     },
 
+    "LoadBalancerSecurityGroup": {
+         "Type": "AWS::EC2::SecurityGroup",
+         "Properties": {
+            "GroupDescription": "allow connections from internal ip addresses",
+            "VpcId" : {"Ref" : "VPC"},
+            "SecurityGroupIngress": [
+                {
+                  "IpProtocol": "tcp",
+                  "FromPort": "80",
+                  "ToPort": "80",
+                  
+                  "CidrIp": "0.0.0.0/0"
+                  
+               },
+               {
+                  "IpProtocol": "tcp",
+                  "FromPort": "22",
+                  "ToPort": "22",
+                  
+                  "CidrIp": "10.0.0.0/16"
+                  
+               } ],
+               
+          "VpcId" : { "Ref" : "VPC" }     
+          }     
+      },
 
     "WebServerInstance" : {
       "Type" : "AWS::EC2::Instance",
@@ -318,13 +350,40 @@
           "Timeout" : "PT15M"
         }
       }
+    },
+  
+    "ElasticLoadBalancer" : {
+      "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties" : {
+        "Subnets" : [{ "Ref" : "Subnet" }],
+        "SecurityGroups" : [ { "Ref" : "InstanceSecurityGroup" },{ "Ref" : "LoadBalancerSecurityGroup" }],
+        "Listeners" : [ 
+        {
+                  "LoadBalancerPort": "80",
+                  "InstancePort": { "Ref" : "WebPort" },
+                  "InstanceProtocol": "HTTP",
+                  "Protocol": "HTTP"
+        }
+         ],
+        "HealthCheck" : {
+          "Target" : { "Fn::Join" : [ "", ["HTTP:", { "Ref" : "WebPort" }, "/"]]},
+          "HealthyThreshold" : "3",
+          "UnhealthyThreshold" : "7",
+          "Interval" : "30",
+          "Timeout" : "25"
+        }
+      }
     }
   },
-
+  
   "Outputs" : {
     "URL" : {
       "Value" : { "Fn::Join" : [ "", ["http://", { "Fn::GetAtt" : ["WebServerInstance", "PublicIp"] }]]},
       "Description" : "Newly created application URL"
+    },
+   "EBLurl" : {
+      "Description" : "URL of the website",
+      "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "ElasticLoadBalancer", "DNSName" ]}]]}
     }
   }
 }
